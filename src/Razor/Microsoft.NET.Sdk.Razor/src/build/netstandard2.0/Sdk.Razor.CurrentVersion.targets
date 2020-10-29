@@ -1,4 +1,4 @@
-﻿<!--
+<!--
 ***********************************************************************************************
 Sdk.Razor.CurrentVersion.targets
 
@@ -50,6 +50,12 @@ Copyright (c) .NET Foundation. All rights reserved.
       $([MSBuild]::VersionGreaterThanOrEquals('$(TargetFrameworkVersion)', '5.0')) ">true</_TargetingNET50OrLater>
 
     <!--
+      We want to limit support for source generators based compilation to 6.0 or newer in user's apps.
+    -->
+    <_TargetingNET60OrLater Condition=" '$(TargetFrameworkIdentifier)' == '.NETCoreApp' AND
+      $([MSBuild]::VersionGreaterThanOrEquals('$(TargetFrameworkVersion)', '6.0')) ">true</_TargetingNET60OrLater>
+
+    <!--
       Infer the RazorLangVersion if no value was specified. When adding support for newer target frameworks, list newer language versions first.
     -->
     <RazorLangVersion Condition="'$(RazorLangVersion)' == '' AND '$(_TargetingNET50OrLater)' == 'true'">5.0</RazorLangVersion>
@@ -97,6 +103,11 @@ Copyright (c) .NET Foundation. All rights reserved.
       ResolveRazorConfiguration;
       ResolveRazorGenerateInputs;
       AssignRazorGenerateTargetPaths;
+      _ResolveGeneratedRazorCompileInputs;
+    </PrepareForRazorGenerateDependsOn>
+
+    <PrepareForRazorGenerateDependsOn Condition="'$(_TargetingNET60OrLater)' != 'true'">
+      $(PrepareForRazorGenerateDependsOn);
       ResolveAssemblyReferenceRazorGenerateInputs;
       _CheckForMissingRazorCompiler;
       _CheckForIncorrectMvcConfiguration;
@@ -112,6 +123,10 @@ Copyright (c) .NET Foundation. All rights reserved.
 
     <RazorGenerateDependsOn>
       PrepareForRazorGenerate;
+    </RazorGenerateDependsOn>
+
+    <RazorGenerateDependsOn Condition="'$(_TargetingNET60OrLater)' != 'true'">
+      $(RazorGenerateDependsOn);
       _CheckForMissingRazorCompiler;
       RazorCoreGenerate
     </RazorGenerateDependsOn>
@@ -128,7 +143,6 @@ Copyright (c) .NET Foundation. All rights reserved.
 
     <ResolveRazorCompileInputsDependsOn>
       ResolveRazorEmbeddedResources;
-      _FixupRazorReferencePathForRazorCompile;
     </ResolveRazorCompileInputsDependsOn>
 
     <RazorCompileDependsOn>
@@ -354,9 +368,11 @@ Copyright (c) .NET Foundation. All rights reserved.
   <Import Project="Microsoft.NET.Sdk.Razor.Configuration.targets" Condition="'$(_Targeting30OrNewerRazorLangVersion)' == 'true'" />
 
   <!-- For projects targeting 3.x and later, use the compiler that ships in the SDK -->
-  <Import Project="Microsoft.NET.Sdk.Razor.CodeGeneration.targets" Condition="'$(_Targeting30OrNewerRazorLangVersion)' == 'true'" />
+  <Import Project="Microsoft.NET.Sdk.Razor.CodeGeneration.targets" Condition="'$(_Targeting30OrNewerRazorLangVersion)' == 'true' AND '$(_TargetingNET60OrLater)' != 'true'" />
 
-  <Import Project="Microsoft.NET.Sdk.Razor.Component.targets" Condition="'$(_Targeting30OrNewerRazorLangVersion)' == 'true'" />
+  <Import Project="Microsoft.NET.Sdk.Razor.Component.targets" Condition="'$(_Targeting30OrNewerRazorLangVersion)' == 'true' AND '$(_TargetingNET60OrLater)' != 'true'" />
+
+  <Import Project="Microsoft.NET.Sdk.Razor.SourceGenerators.targets" Condition="'$(_TargetingNET60OrLater)' == 'true'" />
 
   <Import Project="Microsoft.NET.Sdk.Razor.ScopedCss.targets" Condition="'$(ScopedCssEnabled)' == 'true'" />
 
@@ -594,17 +610,6 @@ Copyright (c) .NET Foundation. All rights reserved.
       <RazorReferencePath
         Include="@(IntermediateAssembly->Metadata('FullPath'))"
         Condition="'$(_RazorComponentDeclarationAssemblyFullPath)' == ''" />
-    </ItemGroup>
-  </Target>
-
-  <Target Name="_FixupRazorReferencePathForRazorCompile" Condition="'$(_RazorComponentDeclarationAssemblyFullPath)' != ''">
-    <!--
-      ResolveAssemblyReferenceRazorGenerateInputs may have added the component declaration assembly to RazorReferencePath to perform tag helper discovery.
-      However, we want to compile the Razor assembly against the actual output of the project build i.e. the IntermediateAssembly.
-    -->
-    <ItemGroup>
-      <RazorReferencePath Remove="$(_RazorComponentDeclarationAssemblyFullPath)" />
-      <RazorReferencePath Include="@(IntermediateAssembly->Metadata('FullPath'))" />
     </ItemGroup>
   </Target>
 
@@ -873,6 +878,14 @@ Copyright (c) .NET Foundation. All rights reserved.
       <!-- Example, c:\MyProjects\MyProject\bin\debug\MyAssembly.Views.dll -->
       <RazorTargetPath Condition=" '$(RazorTargetPath)' == '' ">$(RazorTargetDir)$(RazorTargetName).dll</RazorTargetPath>
     </PropertyGroup>
+  </Target>
+
+  <Target Name="_ResolveGeneratedRazorCompileInputs">
+    <ItemGroup>
+      <RazorCompile
+        Include="%(RazorGenerateWithTargetPath.GeneratedOutput)"
+        Condition="'%(RazorGenerateWithTargetPath.DocumentKind)'=='mvc'" />
+    </ItemGroup>
   </Target>
 
   <Target Name="_RazorSdkCustomCollectWatchItems">
